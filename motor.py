@@ -75,3 +75,13 @@ class Motor(object):
         else:
             self.IN1.on()
             self.IN2.off()
+
+    def ctrl_alloc(self, direction, pwm):
+        if direction == 1:    # Forwards
+            self.set_forwards();
+        elif direction == 0:  # Backwards
+            set.set_backwards();
+        else:
+            print("Error: Invalid direction passed to motor_ctrl_alloc()")
+        if 0 <= pwm <= 100:
+            self.duty(pwm);
