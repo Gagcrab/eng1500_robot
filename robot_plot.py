@@ -1,8 +1,3 @@
-"""
-Because matplotlib shits itself on Bicky D's laptop, I'm moving the plotting
-functions here.
-"""
-
 import matplotlib.pyplot as plt
 import csv
 
@@ -36,7 +31,7 @@ def motor_calibration_plot(filename):
     plt.show()
 
 
-def apds9960_calibration(filename):
+def apds9960_calibration_plot(filename):
     """
     Reads CSV data with the follow three respective columns:
         APDS9960 distance sensor value
@@ -52,11 +47,15 @@ def apds9960_calibration(filename):
     with open(filename, 'r') as csvfile:
         plotdata = csv.reader(csvfile, delimiter=',')
         for row in plotdata:
-            apds9960.append(int(row[0]))
-            ultrasonic.append(int(row[1]))
+            apds9960.append(row[0])
+            ultrasonic.append(row[1])
 
     plt.plot(ultrasonic,apds9960,marker='o')
     plt.title("APDS9960 vs Ultrasonic Sensor")
     plt.xlabel("Ultrasonic distance [mm]")
     plt.ylabel("APDS9960 distance [no units]")
     plt.show()
+
+
+#motor_calibration_plot('motor_csv.txt')
+apds9960_calibration_plot('distance_csv.txt')

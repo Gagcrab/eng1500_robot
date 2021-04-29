@@ -18,11 +18,10 @@ def line_distance_mm(adc1, adc2, adc3, adc4):
     :return: Distance in mm of object in front of ultrasonic sensor
     """
     # These values contain the offset of the line sensors relative to the centre of the vehicle.
-    # TODO: measure these
-    x1 = -24.0
-    x2 = -7.5
-    x3 = 7.5
-    x4 = 24.0
+    x1 = -31
+    x2 = -9
+    x3 = 9
+    x4 = 31
 
     # Read our sensor data
     w1 = adc1.read()
@@ -49,7 +48,6 @@ def ultrasonic_read(ultraSens, numReadings):
     :param numReadings: Number of readings to take and average
     :return: Distance in mm of object in front of ultrasonic sensor
     """
-    numReadings = 10
     readings = [numReadings]
     readIndex = 0
     readTotal = 0
@@ -65,7 +63,7 @@ def ultrasonic_read(ultraSens, numReadings):
 
     readAvg = readTotal / numReadings
     dist = readAvg
-    print("Distance = {:6.2f} [mm]".format(dist))
+    #print("Distance = {:6.2f} [mm]".format(dist))
     sleep(0.1)
 
     return dist
@@ -98,7 +96,7 @@ def motor_calibration(motor_left, motor_right, enc):
         right_count = enc.get_right()
         print("{:3d}, {:4d}, {:4d}".format(testPWM, left_count, right_count))
         sleep(1)
-    print("Measurements generated! Paste the above inisde /'motor_csv.txt/'")
+    print("Measurements generated! Paste the above inside motor_csv.txt")
 
 
 def apds9960_distance_calibration(apds9960, ultra):
@@ -115,4 +113,4 @@ def apds9960_distance_calibration(apds9960, ultra):
         ultrasonic_measurement_mm = ultrasonic_read(ultra, 10)
         print("{:3d}, {:4.2f}".format(proximity_measurement, ultrasonic_measurement_mm))
         sleep(0.2)  # Wait for measurement to be ready
-    print("Measurements generated! Paste the above inisde /'rgb_csv.txt/'")
+    print("Measurements generated! Paste the above inside rgb_csv.txt")
