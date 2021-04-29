@@ -4,35 +4,51 @@ This way, the main.py file can stay clean and be modified easily.
 """
 
 from time import sleep
-import matplotlib.pyplot as plt
-import csv
 
 
-def line_sensor_read(adc_A1, adc_A2, adc_A3, adc_A4):
+def line_distance_mm(adc1, adc2, adc3, adc4):
+    """
+    Ultrasonic sensor reading function that averages the result of the
+    past numReadings. Returns distance in mm of object in front of
+    ultrasonic sensor.
+    :param adc1: ADC input for the left-most (from head-on) line sensor
+    :param adc2: ADC input for the centre-left (from head-on) line sensor
+    :param adc3: ADC input for the centre-right (from head-on) line sensor
+    :param adc4: ADC input for the right-most (from head-on) line sensor
+    :return: Distance in mm of object in front of ultrasonic sensor
+    """
     # These values contain the offset of the line sensors relative to the centre of the vehicle.
-    # TODO: Measure and tweak these values
-    x1 = -22.5
+    # TODO: measure these
+    x1 = -24.0
     x2 = -7.5
     x3 = 7.5
-    x4 = 22.5
+    x4 = 24.0
 
     # Read our sensor data
-    w1 = adc_A1.read()
-    w2 = adc_A2.read()
-    w3 = adc_A3.read()
-    w4 = adc_A4.read()
+    w1 = adc1.read()
+    w2 = adc2.read()
+    w3 = adc3.read()
+    w4 = adc4.read()
 
     num = w1*x1 + w2*x2 + w3*x3 + w4*x4
     denom = w1 + w2 + w3 + w4
 
     # line_dist contains the offset of the line relative to the centre of the vehicle
-    line_dist = num/denom
+    dist_mm = num/denom
 
-    print("Distance from line = {:3.2f}".format(line_dist))
-    return line_dist
+    print("Distance from line = {:3.2f}".format(dist_mm))
+    return dist_mm
 
 
 def ultrasonic_read(ultraSens, numReadings):
+    """
+    Ultrasonic sensor reading function that averages the result of the
+    past numReadings. Returns distance in mm of object in front of
+    ultrasonic sensor.
+    :param ultraSens: Ultrasonic sensor object from ultrasonic.py
+    :param numReadings: Number of readings to take and average
+    :return: Distance in mm of object in front of ultrasonic sensor
+    """
     numReadings = 10
     readings = [numReadings]
     readIndex = 0
@@ -56,12 +72,16 @@ def ultrasonic_read(ultraSens, numReadings):
 
 
 def motor_calibration(motor_left, motor_right, enc):
-    """ This function generates lines of CSV in the REPL output representing the:
-            Current PWM value
-            Encoder count for left wheel
-            Encoder count for right wheel
-        In three respective columns. This should be copy-pasted into a file and
-        parsed with the motor_calibration_plot() function.
+    """
+    This function generates lines of CSV in the REPL output representing the:
+        Current PWM value
+        Encoder count for left wheel
+        Encoder count for right wheel
+    In three respective columns. This should be copy-pasted into a file and
+    parsed with the motor_calibration_plot() function.
+    :param motor_left: Motor object from motor.py, corresponding to left wheel
+    :param motor_right: Motor object from motor.py, corresponding to right wheel
+    :param enc: Encoder object from encody.py
     """
     print("PWM, ENC_L, ENC_R")
     for testPWM in range(0, 101, 5):  # Loop from 0-100% increasing by 5%
@@ -78,31 +98,21 @@ def motor_calibration(motor_left, motor_right, enc):
         right_count = enc.get_right()
         print("{:3d}, {:4d}, {:4d}".format(testPWM, left_count, right_count))
         sleep(1)
+    print("Measurements generated! Paste the above inisde /'motor_csv.txt/'")
 
 
-def motor_calibration_plot(filename):
-    """ This function reads CSV data with the follow three respective columns:
-            Current PWM value
-            Encoder count for left wheel
-            Encoder count for right wheel
-        Two curves will be generated demonstrating the discrepancy between the
-        duty cycles of our motors.
+def apds9960_distance_calibration(apds9960, ultra):
     """
-    testPWM = []
-    left_enc = []
-    right_enc = []
-
-    with open(filename, 'r') as csvfile:
-        plotdata = csv.reader(csvfile, delimiter=',')
-        for row in plotdata:
-            testPWM.append(int(row[0]))
-            left_enc.append(int(row[1]))
-            right_enc.append(int(row[2]))
-
-    plt.plot(testPWM, left_enc, marker='o')
-    plt.plot(testPWM, right_enc, marker='o')
-    plt.title("Marker PWM vs Encoder speed")
-    plt.xlabel("PWM duty cycle")
-    plt.ylabel("Encoder count / speed")
-    plt.legend(['right motor', 'left motor'])
-    plt.show()
+    Generates lines of CSV in the REPL output representing the:
+        Proximity of the APDS9960 RGB Sensor, and
+        Proximity of the ultrasonic sensor in mm
+    In two respective columns. This should be copy-pasted into a file
+    :param apds9960: APDS9960 sensor object from APDS9960LITE.py
+    :param ultra: Ultrasonic object from ultrasonic.py
+    """
+    for i in range(100): # Take 100 measurements
+        proximity_measurement = apds9960.prox.proximityLevel # Read the proximity
+        ultrasonic_measurement_mm = ultrasonic_read(ultra, 10)
+        print("{:3d}, {:4.2f}".format(proximity_measurement, ultrasonic_measurement_mm))
+        sleep(0.2)  # Wait for measurement to be ready
+    print("Measurements generated! Paste the above inisde /'rgb_csv.txt/'")

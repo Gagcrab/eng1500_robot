@@ -76,12 +76,17 @@ class Motor(object):
             self.IN1.on()
             self.IN2.off()
 
-    def ctrl_alloc(self, direction, pwm):
-        if direction == 1:    # Forwards
-            self.set_forwards();
-        elif direction == 0:  # Backwards
-            set.set_backwards();
-        else:
-            print("Error: Invalid direction passed to motor_ctrl_alloc()")
+    def ctrl_alloc(self, pwmvec):
+        """
+        Controls speed and direction of a Motor object.
+        :param pwmvec: Percentage of full power to be sent as a PWM
+        voltage. Positive values are forward, negative values are backward.
+        """
+        if pwmvec >= 0:  # Forward
+            self.set_forwards()
+        else:            # Backward
+            self.set_backwards()
+
+        pwm = abs(pwmvec)
         if 0 <= pwm <= 100:
-            self.duty(pwm);
+            self.duty(pwm)
