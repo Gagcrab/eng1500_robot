@@ -78,9 +78,12 @@ class Motor(object):
 
     def ctrl_alloc(self, pwmvec):
         """
-        Controls speed and direction of a Motor object.
+        Controls speed and direction of a Motor object. This should be
+        used in place of the duty(), set_forwards() and set_backwards()
+        functions.
         :param pwmvec: Percentage of full power to be sent as a PWM
-        voltage. Positive values are forward, negative values are backward.
+        voltage. Sign determines direction and absolute value determines
+        power.
         """
         if pwmvec >= 0:  # Forward
             self.set_forwards()

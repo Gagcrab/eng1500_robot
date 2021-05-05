@@ -79,7 +79,7 @@ def motor_calibration(motor_left, motor_right, enc):
     parsed with the motor_calibration_plot() function.
     :param motor_left: Motor object from motor.py, corresponding to left wheel
     :param motor_right: Motor object from motor.py, corresponding to right wheel
-    :param enc: Encoder object from encody.py
+    :param enc: Encoder object from encode.py
     """
     print("PWM, ENC_L, ENC_R")
     for testPWM in range(0, 101, 5):  # Loop from 0-100% increasing by 5%

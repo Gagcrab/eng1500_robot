@@ -10,65 +10,83 @@ from util import motor_calibration, apds9960_distance_calibration, \
 import sys
 import ultrasonic
 
-# The following are a bunch of variables which enable/disable different robot functionality.
-enableUltrasonic       = 1
-enableLineSensors      = 1
-enableLineFollowing    = 0
-enableRGB              = 1
+"""
+=======================================================================
+------------------- Pin configuration and constants -------------------
+=======================================================================
+"""
+LN_SENS_1 = "A1" ;           RGB_1 = "PB13"
+LN_SENS_2 = "A2" ;           RGB_2 = "PB14"
+LN_SENS_3 = "A3" ;           ULTRA_TRIG = "D13"
+LN_SENS_4 = "A4" ;           ULTRA_ECHO = "D12"
+ENC_L = "D2"; ENC_R = "D3" ; ULTRA_TIMEOUT = 1000*2/(340.29*1e-3) # 1.0 metres
+MOTOR_L_IN1    = "D6" ;      MOTOR_R_IN1    = "D8"
+MOTOR_L_IN2    = "D7" ;      MOTOR_R_IN2    = "D9"
+MOTOR_L_EN_PWM = "D4" ;      MOTOR_R_EN_PWM = "D5"
+fwdSpeed = 75 ;              bckSpeed = -65
+STATE = "DRIVE_FORWARD"  # Specify default state here
+
+# Enable/disable different robot functionality.
+enableUltrasonic       = 1 ; enableRGB              = 1
+enableLineSensors      = 1 ; enableMotorCalibration = 0
+enableLineFollowing    = 0 ; enableRGBCalibration   = 0
 enableMovement         = 0
-
-# ONLY used for calibration/plotting
-enableMotorCalibration = 0
-enableRGBCalibration   = 1
-
+"""
+=======================================================================
+------------------------ Initialisation code --------------------------
+=======================================================================
+"""
 if enableRGBCalibration:    # RGB calibration requires RGB and Ultrasonic functionality
     enableRGB        = 1
     enableUltrasonic = 1
 
-# From a front on perspective, sensor 1 is leftmost, sensor 4 is rightmost
+# From front on perspective, sensor 1 is leftmost, sensor 4 is rightmost
 if enableLineSensors:
-    lnSens_A1 = ADC(APin("A1"))
-    lnSens_A2 = ADC(APin("A2"))
-    lnSens_A3 = ADC(APin("A3"))
-    lnSens_A4 = ADC(APin("A4"))
+    lnSens_A1 = ADC(APin(LN_SENS_1))
+    lnSens_A2 = ADC(APin(LN_SENS_2))
+    lnSens_A3 = ADC(APin(LN_SENS_3))
+    lnSens_A4 = ADC(APin(LN_SENS_4))
 
 if enableRGB:
     # Initialise I2C bus
-    i2c = I2C(scl=Pin("PB13"), sda=Pin("PB14"))
+    i2c = I2C(scl=Pin(RGB_1), sda=Pin(RGB_2))
     # Initialise APDS9960
     apds9960 = APDS9960LITE(i2c)    # Create APDS9960 sensor object
     apds9960.prox.enableSensor()    # Send I2C command to enable sensor
 
 if enableUltrasonic:
-    # D13 is trigger, D12 is echo, timeout is set to 1.0 metres
-    ultraSens = ultrasonic.HCSR04("D13", "D12", echo_timeout_us=1000*2/(340.29*1e-3))
+    ultraSens = ultrasonic.HCSR04(ULTRA_TRIG, ULTRA_ECHO, echo_timeout_us=ULTRA_TIMEOUT)
 
 # Create left/right Motor, Encoder objects
-motor_left = Motor("left", "D6", "D7", "D4")
-motor_right = Motor("right", "D8", "D9", "D5")
-enc = Encoder("D2", "D3")  # D2 is left wheel, D3 is right wheel
-
-fwdSpeed = 75  # Forward and backward speeds for motors, respectively
-bckSpeed = -65
-
-sleep(0.2)     # Wait to ensure everything is initialized
+motor_left = Motor("left", MOTOR_L_IN1, MOTOR_L_IN2, MOTOR_L_EN_PWM)
+motor_right = Motor("right", MOTOR_R_IN1, MOTOR_R_IN2, MOTOR_R_EN_PWM)
+enc = Encoder(ENC_L, ENC_R)  # D2 is left wheel, D3 is right wheel
 
 if enableMovement == 0:
     fwdSpeed = 0
     bckSpeed = 0
 
+sleep(0.2)     # Wait to ensure everything is initialized
+
+if enableMotorCalibration:
+    motor_left.ctrl_alloc(0)
+    motor_right.ctrl_alloc(0)
+    enc.clear_count()
+    motor_calibration(motor_left, motor_right, enc)
+    sys.exit(0)
+
 if enableRGBCalibration:
     apds9960_distance_calibration(apds9960, ultraSens)
     sys.exit(0)
-
+"""
+=======================================================================
+----------------------- Main loop begins below ------------------------
+=======================================================================
+"""
 while True:
     motor_left.ctrl_alloc(0)    # Set left motor to run forwards, speed 0
     motor_right.ctrl_alloc(0)   # Set right motor to run forwards, speed 0
     enc.clear_count()           # Reset the encoder to zero
-
-    if enableMotorCalibration:
-        motor_calibration(motor_left, motor_right, enc)
-        sys.exit(0)
 
     if enableLineSensors:
         line_dist = line_distance_mm(lnSens_A1, lnSens_A2, lnSens_A3, lnSens_A4)
