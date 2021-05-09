@@ -180,7 +180,10 @@ while True:
         else:  # If ultrasonic disabled, we don't need to meet this condition
             fwdConds -= 1 ; revConds -= 1
 
-        if fwdCondsMet == fwdConds:  # Check if we meet all conditions
+        if fwdConds == 0:
+            print("Enable some sensors! The state machine is blind!")
+            state = state
+        elif fwdCondsMet == fwdConds:  # Check if we meet all conditions
             state = "DRIVE_FORWARD"
         elif revCondsMet == revConds:
             state = "DRIVE_REVERSE"
@@ -188,7 +191,6 @@ while True:
             print("Neither DRIVE_FORWARD or DRIVE_REVERSE conditions met!")
             state = state
         ### END TRANSITION CONDITIONS ###
-        sleep(0.5)  # Wait before switching to another state
 
     elif state == "DRIVE_FORWARD":
         motorChangeL = fwdSpeed
