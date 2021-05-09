@@ -51,7 +51,6 @@ def ultrasonic_read(ultraSens, numReadings):
     readings = [numReadings]
     readIndex = 0
     readTotal = 0
-    readAvg = 0
 
     readTotal -= readings[readIndex]
     readings[readIndex] = ultraSens.distance_mm()
@@ -108,8 +107,8 @@ def apds9960_distance_calibration(apds9960, ultra):
     :param apds9960: APDS9960 sensor object from APDS9960LITE.py
     :param ultra: Ultrasonic object from ultrasonic.py
     """
-    for i in range(100): # Take 100 measurements
-        proximity_measurement = apds9960.prox.proximityLevel # Read the proximity
+    for i in range(100):  # Take 100 measurements
+        proximity_measurement = apds9960.prox.proximityLevel  # Read the proximity
         ultrasonic_measurement_mm = ultrasonic_read(ultra, 10)
         print("{:3d}, {:4.2f}".format(proximity_measurement, ultrasonic_measurement_mm))
         sleep(0.2)  # Wait for measurement to be ready
