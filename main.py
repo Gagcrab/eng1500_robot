@@ -132,7 +132,7 @@ while True:
 
     if enableProximity:
         # TODO: replace line with mm conversion
-        prox_dist = apds9960.prox.proximityLevel  # Read the proximity value
+        prox_dist =   # Read the proximity value
         #print(proximity_measurement)
 
     if enableUltrasonic:  # ultrasonic_read() causes a delay of 100ms in the loop

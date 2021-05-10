@@ -4,7 +4,7 @@ This way, the main.py file can stay clean and be modified easily.
 """
 
 from time import sleep
-
+from bisect import bisect_left
 
 def line_distance_mm(adc1, adc2, adc3, adc4):
     """
@@ -18,10 +18,10 @@ def line_distance_mm(adc1, adc2, adc3, adc4):
     :return: Distance in mm of object in front of ultrasonic sensor
     """
     # These values contain the offset of the line sensors relative to the centre of the vehicle.
-    x1 = -31
-    x2 = -9
-    x3 = 9
-    x4 = 31
+    x1 = -21
+    x2 = -7
+    x3 = 7
+    x4 = 21
 
     # Read our sensor data
     w1 = adc1.read()
@@ -39,6 +39,12 @@ def line_distance_mm(adc1, adc2, adc3, adc4):
     return dist_mm
 
 
+# Globals for ultrasonic_read()
+ultraRunOnce = 0
+ultraReadArray = []
+ultraReadIndex = 0
+ultraReadTotal = 0
+
 def ultrasonic_read(ultraSens, numReadings):
     """
     Ultrasonic sensor reading function that averages the result of the
@@ -48,24 +54,104 @@ def ultrasonic_read(ultraSens, numReadings):
     :param numReadings: Number of readings to take and average
     :return: Distance in mm of object in front of ultrasonic sensor
     """
-    readings = [numReadings]
-    readIndex = 0
-    readTotal = 0
+    global ultraRunOnce
+    global ultraReadArray
+    global ultraReadIndex
+    global ultraReadTotal
 
-    readTotal -= readings[readIndex]
-    readings[readIndex] = ultraSens.distance_mm()
-    readTotal += readings[readIndex]
-    readIndex += 1
+    if ultraRunOnce == 0:
+        ultraReadArray = [numReadings]
+        ultraRunOnce = 1
 
-    if readIndex >= numReadings:
-        readIndex = 0
+    ultraReadTotal -= ultraReadArray[ultraReadIndex]
+    ultraReadArray[ultraReadIndex] = ultraSens.distance_mm()
+    ultraReadTotal += ultraReadArray[ultraReadIndex]
+    ultraReadIndex += 1
 
-    readAvg = readTotal / numReadings
+    if ultraReadIndex >= numReadings:
+        ultraReadIndex = 0
+
+    readAvg = ultraReadTotal / numReadings
     dist = readAvg
     #print("Distance = {:6.2f} [mm]".format(dist))
     sleep(0.1)
 
     return dist
+
+
+def take_closest(myList, myNumber):
+    """
+    Assumes myList is sorted. Returns closest value to myNumber.
+
+    If two numbers are equally close, return the smallest number.
+    """
+    pos = bisect_left(myList, myNumber)
+    if pos == 0:
+        return myList[0]
+    if pos == len(myList):
+        return myList[-1]
+    before = myList[pos - 1]
+    after = myList[pos]
+    if after - myNumber < myNumber - before:
+       return after
+    else:
+       return before
+
+
+# Globals for proximity_read()
+proxRunOnce = 0
+proxReadArray = []
+proxReadIndex = 0
+proxReadTotal = 0
+
+def proximity_read(apds9960, numReadings):
+    """
+    Converts an arbitrary APDS9960 proximity measurement into a distance in mm
+    via a lookup table. Also smooths out the output of
+    :param apds9960: APDS9960 object from APDS9960LITE.py
+    :param numReadings: Number of readings to take and average
+    :return: Distance in mm of object in front of APDS9960 proximity sensor
+    """
+    proxLUT = {
+        0: 20,      # left is sensor reading,
+        0.5: 17.5,  # right is corresponding distance in mm
+        1.0: 15.0,
+        1.5: 12.5,
+        2.0: 11.5,
+        2.5: 10,
+        5.0: 8.0,
+        7.5: 6.1,
+        10: 5.4,
+        20: 4.1,
+        40: 3.1,
+        60: 2.9,
+        80: 2.7,
+        95: 2.5,
+    }
+
+    global proxRunOnce
+    global proxReadArray
+    global proxReadIndex
+    global proxReadTotal
+
+    if proxRunOnce == 0:
+        proxReadArray = [numReadings]
+        proxRunOnce = 1
+
+    proxReadTotal -= proxReadArray[proxReadIndex]
+    proxReadArray[proxReadIndex] = apds9960.prox.proximityLevel
+    proxReadTotal += proxReadArray[proxReadIndex]
+    proxReadIndex += 1
+
+    if proxReadIndex >= numReadings:
+        proxReadIndex = 0
+
+    readAvg = proxReadTotal / numReadings
+    prox_dist_mm = take_closest(proxLUT, readAvg)
+    #print("Distance = {:6.2f} [mm]".format(dist))
+    sleep(0.1)
+
+    return prox_dist_mm
 
 
 def motor_calibration(motor_left, motor_right, enc):
