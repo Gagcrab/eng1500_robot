@@ -4,7 +4,6 @@ This way, the main.py file can stay clean and be modified easily.
 """
 
 from time import sleep
-from bisect import bisect_left
 
 def line_distance_mm(adc1, adc2, adc3, adc4):
     """
@@ -34,8 +33,8 @@ def line_distance_mm(adc1, adc2, adc3, adc4):
 
     # line_dist contains the offset of the line relative to the centre of the vehicle
     dist_mm = num/denom
+    #dist_mm = (w1*x1)/denom + (w2*x2)/denom + (w3*x3)/denom + (w4*x4)/denom
 
-    print("Distance from line = {:3.2f}".format(dist_mm))
     return dist_mm
 
 
@@ -60,7 +59,7 @@ def ultrasonic_read(ultraSens, numReadings):
     global ultraReadTotal
 
     if ultraRunOnce == 0:
-        ultraReadArray = [numReadings]
+        ultraReadArray = [0]*numReadings
         ultraRunOnce = 1
 
     ultraReadTotal -= ultraReadArray[ultraReadIndex]
@@ -72,30 +71,9 @@ def ultrasonic_read(ultraSens, numReadings):
         ultraReadIndex = 0
 
     readAvg = ultraReadTotal / numReadings
-    dist = readAvg
-    #print("Distance = {:6.2f} [mm]".format(dist))
     sleep(0.1)
 
-    return dist
-
-
-def take_closest(myList, myNumber):
-    """
-    Assumes myList is sorted. Returns closest value to myNumber.
-
-    If two numbers are equally close, return the smallest number.
-    """
-    pos = bisect_left(myList, myNumber)
-    if pos == 0:
-        return myList[0]
-    if pos == len(myList):
-        return myList[-1]
-    before = myList[pos - 1]
-    after = myList[pos]
-    if after - myNumber < myNumber - before:
-       return after
-    else:
-       return before
+    return readAvg
 
 
 # Globals for proximity_read()
@@ -106,28 +84,11 @@ proxReadTotal = 0
 
 def proximity_read(apds9960, numReadings):
     """
-    Converts an arbitrary APDS9960 proximity measurement into a distance in mm
-    via a lookup table. Also smooths out the output of
+    Averages the result of past numReadings.
     :param apds9960: APDS9960 object from APDS9960LITE.py
     :param numReadings: Number of readings to take and average
-    :return: Distance in mm of object in front of APDS9960 proximity sensor
+    :return: Averaged APDS9960 proximity sensor reading.
     """
-    proxLUT = {
-        0: 20,      # left is sensor reading,
-        0.5: 17.5,  # right is corresponding distance in mm
-        1.0: 15.0,
-        1.5: 12.5,
-        2.0: 11.5,
-        2.5: 10,
-        5.0: 8.0,
-        7.5: 6.1,
-        10: 5.4,
-        20: 4.1,
-        40: 3.1,
-        60: 2.9,
-        80: 2.7,
-        95: 2.5,
-    }
 
     global proxRunOnce
     global proxReadArray
@@ -135,7 +96,7 @@ def proximity_read(apds9960, numReadings):
     global proxReadTotal
 
     if proxRunOnce == 0:
-        proxReadArray = [numReadings]
+        proxReadArray = [0]*numReadings
         proxRunOnce = 1
 
     proxReadTotal -= proxReadArray[proxReadIndex]
@@ -147,11 +108,8 @@ def proximity_read(apds9960, numReadings):
         proxReadIndex = 0
 
     readAvg = proxReadTotal / numReadings
-    prox_dist_mm = take_closest(proxLUT, readAvg)
-    #print("Distance = {:6.2f} [mm]".format(dist))
-    sleep(0.1)
 
-    return prox_dist_mm
+    return readAvg
 
 
 def motor_calibration(motor_left, motor_right, enc):
