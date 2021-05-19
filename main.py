@@ -5,13 +5,14 @@ from motor import Motor
 from encoder import Encoder
 from APDS9960LITE import APDS9960LITE
 from util import motor_calibration, apds9960_distance_calibration, \
-                 line_distance_mm, ultrasonic_read, proximity_read
+                 line_distance_mm, ultrasonic_read
 import sys, ultrasonic, ssd1306
 
 # Enable/disable different robot functionality.
 enableUltrasonic       = 1; enableProximity        = 1
 enableLineSensors      = 1; enableSideIRSensors    = 1
-enableMovement         = 0; enableDisplay          = 1
+enableServo            = 1; enableDisplay          = 1
+enableMovement         = 0
 # Only use these for generating calibration data
 enableRGBCalibration   = 0; enableMotorCalibration = 0
 
@@ -40,8 +41,8 @@ lineSensMod = 1.0  # 1.0 = no effect
 
 # Distance thresholds for the state machine
 proxCloseThres = 2.0  # about 120 mm
-proxStopThres  = 8.0  # about 60 mm
-ultraStopThres = 100  # 100 mm
+proxStopThres  = 5.0  # about 60 mm
+ultraStopThres = 150  # 100 mm
 garageThres = 100     # 100 mm
 
 # Default state
@@ -85,10 +86,13 @@ if enableProximity:
 
 if enableUltrasonic:
     ultraSens = ultrasonic.HCSR04(ULTRA_TRIG, ULTRA_ECHO, echo_timeout_us=ULTRA_TIMEOUT)
+    print("Ultrasonic sensor initialised.")
+
+if enableServo:
     my_servo = Servo(1)
     my_servo.calibration(640, 2420, 1700, 2470, 2220)
     my_servo.angle(0)   # Aim ultrasonic straight
-    print("Ultrasonic sensor and servo initialised.")
+    print("Servo motor initialised.")
 
 # Create left/right Motor, Encoder objects
 motor_left = Motor("left", MOTOR_L_IN1, MOTOR_L_IN2, MOTOR_L_EN_PWM)
@@ -124,6 +128,7 @@ side_r_dist = 0
 ultra_dist = 0
 prox_dist = 0
 runOnce = 0
+checkTimer = 0
 
 while True:
     motor_left.ctrl_alloc(0)    # Set left motor to run forwards, speed 0
@@ -144,16 +149,43 @@ while True:
     else: sideSens_L_Str = 'iL:n/a'; sideSens_R_Str = 'iR:n/a'
 
     if enableProximity:
-        prox_dist = proximity_read(apds9960, 10)
+        prox_dist = apds9960.prox.proximityLevel
         proxStr = 'Prox:{:.1f}'.format(float(prox_dist))
     else: proxStr = 'Prox:n/a'
 
     if enableUltrasonic:  # ultrasonic_read() causes a delay of 100ms in the loop
+        if enableServo and runOnce < 1:  # Get initial values for ultra_L_Str and ultra_R_Str
+            my_servo.angle(90, 400)  # Turn servo left
+            sleep(0.5)
+            i = 0
+            while i < 10:
+                ultra_l_dist = ultrasonic_read(ultraSens, 10)
+                i += 1
+            if ultra_l_dist < 20:
+                ultra_l_dist = 999
+            ultra_L_Str = ':{}'.format(int(ultra_l_dist))
+
+            # Turn ultrasonic right and gather 10 readings
+            my_servo.angle(-90, 800)  # Turn right left
+            sleep(0.9)
+            j = 0
+            while j < 10:
+                ultra_r_dist = ultrasonic_read(ultraSens, 10)
+                j += 1
+            if ultra_r_dist < 20:
+                ultra_r_dist = 999
+            ultra_R_Str = ':{}'.format(int(ultra_r_dist))
+
+            # We have to redo the front facing ultrasonic reading, in order
+            # to repopulate the array
+            my_servo.angle(0, 400)   # Turn servo straight again
+            sleep(0.5)
+
         ultra_dist = ultrasonic_read(ultraSens, 10)
-        if ultra_dist < 0:
-            ultra_dist = 0
-        ultraStr = 'uF:{}'.format(int(ultra_dist))
-    else: ultraStr = 'Ultra:n/a'
+        if ultra_dist < 20:
+            ultra_dist = 999
+        ultraStr = 'US:{}'.format(int(ultra_dist))
+    else: ultraStr = 'US:n/a'; ultra_L_Str = ':n/a'; ultra_R_Str = ':n/a'
 
     # We will need to wait till later to get ultra_l_dist and ultra_r_dist!
 
@@ -170,6 +202,8 @@ while True:
 
     # Stop and check
     if state == "STOP_CHECK":
+        # By initialising default values, we can allow this state to function
+        # with any of these sensors disabled!
         motorChangeL = 0
         motorChangeR = 0
         pTooClose = 0
@@ -180,9 +214,10 @@ while True:
         uRightTooClose = 0
         tooCloseLeft = 0
         tooCloseRight = 0
+        checkTimer += 1  # Allows us to use servo once every x iterations
 
         if enableProximity:
-            if prox_dist < proxStopThres:
+            if prox_dist > proxStopThres:
                 pTooClose = 1
 
         if enableSideIRSensors:
@@ -191,44 +226,52 @@ while True:
             if side_r_dist == 0:
                 iRightTooClose = 1
 
-        if enableUltrasonic:
+        if enableServo and enableUltrasonic and runOnce >= 10 and checkTimer >= 10:
             # Turn ultrasonic right and gather 10 readings. This is required
             # because ultrasonic_read() takes the average of the past N readings,
             # and this average will be affected by data from previous readings
             # unless we run enough iterations to replace it all.
-            my_servo.angle(-90, 1000)  # Turn servo right
+            my_servo.angle(90, 400)  # Turn servo left
             sleep(0.5)
             i = 0
             while i < 10:
                 ultra_l_dist = ultrasonic_read(ultraSens, 10)
                 i += 1
-            ultra_L_Str = '{}'.format(int(ultra_l_dist))
+            if ultra_l_dist < 20:
+                ultra_l_dist = 999
+            ultra_L_Str = ':{}'.format(int(ultra_l_dist))
 
-            # Turn ultrasonic left and gather 10 readings
-            my_servo.angle(90, 1000)  # Turn servo left
-            sleep(0.5)
+            # Turn servo right and gather 10 readings
+            my_servo.angle(-90, 800)  # Turn servo right
+            sleep(0.9)
             j = 0
             while j < 10:
                 ultra_r_dist = ultrasonic_read(ultraSens, 10)
                 j += 1
-            ultra_R_Str = '{}'.format(int(ultra_r_dist))
+            if ultra_r_dist < 20:
+                ultra_r_dist = 999
+            ultra_R_Str = ':{}'.format(int(ultra_r_dist))
 
             # We have to redo the front facing ultrasonic reading, in order
             # to repopulate the array
-            my_servo.angle(0)   # Turn servo straight again
+            my_servo.angle(0, 400)   # Turn servo straight again
             sleep(0.5)
             k = 0
             while k < 10:
                 ultra_dist = ultrasonic_read(ultraSens, 10)
                 k += 1
-            ultraStr = 'uF:{}'.format(int(ultra_dist))
+            ultraStr = 'US:{}'.format(int(ultra_dist))
 
             if ultra_l_dist < ultraStopThres:
                 uLeftTooClose = 1
             if ultra_r_dist < ultraStopThres:
                 uRightTooClose = 1
-            if ultra_dist < ultraStopThres:
-                uTooClose = 1
+            checkTimer = 0
+
+        if ultra_dist < 20:
+            ultra_dist = 999
+        if ultra_dist < ultraStopThres:
+            uTooClose = 1
 
         # Transition conditions
         if pTooClose == 0:      # Does proxy say we're too close?
@@ -273,7 +316,7 @@ while True:
 
 
         # Transition conditions
-        if enableProximity and prox_dist < proxStopThres or \
+        if enableProximity and prox_dist > proxStopThres or \
            enableUltrasonic and ultra_dist < ultraStopThres or \
            enableSideIRSensors and side_l_dist == 0 or \
            enableSideIRSensors and side_r_dist == 0:
@@ -296,7 +339,7 @@ while True:
         motorChangeR = fwdSpeed - 20
 
         # Transition conditions
-        if enableProximity and prox_dist < proxStopThres or \
+        if enableProximity and prox_dist > proxStopThres or \
            enableUltrasonic and ultra_dist < ultraStopThres or \
            enableSideIRSensors and side_l_dist == 1:
                 state = "STOP_CHECK"
@@ -311,7 +354,7 @@ while True:
         motorChangeR = fwdSpeed
 
         # Transition conditions
-        if enableProximity and prox_dist < proxStopThres or \
+        if enableProximity and prox_dist > proxStopThres or \
            enableUltrasonic and ultra_dist < ultraStopThres or \
            enableSideIRSensors and side_l_dist == 1:
                 state = "STOP_CHECK"
@@ -327,10 +370,11 @@ while True:
 
 
         # Transition conditions
-        if enableProximity and prox_dist > proxStopThres or \
+        if enableProximity and prox_dist < proxCloseThres or \
            enableUltrasonic and ultra_dist > ultraStopThres or \
            enableSideIRSensors and side_l_dist == 0 or \
            enableSideIRSensors and side_r_dist == 0:
+                sleep(0.3)
                 state = "STOP_CHECK"
         else: state = state
         ### END TRANSITION CONDITIONS ###
@@ -349,9 +393,10 @@ while True:
         motorChangeR = fwdSpeed
 
         # Transition conditions
-        if enableProximity and prox_dist > proxStopThres or \
+        if enableProximity and prox_dist < proxCloseThres or \
            enableUltrasonic and ultra_dist > ultraStopThres or \
            enableSideIRSensors and side_r_dist == 0:
+                sleep(0.3)
                 state = "STOP_CHECK"
         else: state = state
         ### END TRANSITION CONDITIONS ###
@@ -363,12 +408,20 @@ while True:
         motorChangeR = fwdSpeed - 20
 
         # Transition conditions
-        if enableProximity and prox_dist > proxStopThres or \
+        if enableProximity and prox_dist < proxCloseThres or \
            enableUltrasonic and ultra_dist > ultraStopThres or \
            enableSideIRSensors and side_l_dist == 0:
+                sleep(0.3)
                 state = "STOP_CHECK"
         else: state = state
         ### END TRANSITION CONDITIONS ###
+
+
+    elif state == "GARAGE_START":
+        print("blah blah")
+
+    elif state == "GARAGE_FINISH":
+        print("finishblah blah")
 
     else:
         print("State machine has fucked up, blame Isaac")
@@ -378,20 +431,27 @@ while True:
     if motorChangeR > motorLimit:
         motorChangeR = motorLimit
 
-    print(lineStr)
-    print("Left side sensor " + sideSens_L_Str)
-    print("Right side sensor " + sideSens_R_Str)
-    print(proxStr)
-    print(ultraStr)
-    print("uL:" + ultra_L_Str)
-    print("uR:" + ultra_R_Str)
+    if enableLineSensors:
+        print(lineStr)
+    if enableSideIRSensors:
+        print("Left side sensor " + sideSens_L_Str)
+        print("Right side sensor " + sideSens_R_Str)
+    if enableProximity:
+        print(proxStr)
+    if enableUltrasonic:
+        print(ultraStr)
+        if enableServo:
+            print("UL Left" + ultra_L_Str)
+            print("UL Right" + ultra_R_Str)
     print(stateStr)
 
+    # TODO: utility function to stop clutter with sensors not present
     if enableDisplay:
         oled.text(lineStr, 0, 1); oled.text(sideSens_L_Str, 80, 1)
         oled.text(proxStr, 0, 9); oled.text(sideSens_R_Str, 80, 9)
         oled.text(ultraStr, 0, 17)
-        oled.text(ultra_L_Str, 52, 17); oled.text(ultra_R_Str, 80, 17)
+        oled.text(ultra_L_Str, 51, 17)
+        oled.text(ultra_R_Str, 81, 17)
         oled.text(str(state), 0, 25)
         oled.show()
 
@@ -400,5 +460,7 @@ while True:
     else:
         motor_left.ctrl_alloc(motorChangeL)  # Change our motor speeds
         motor_right.ctrl_alloc(motorChangeR)
+        print("Setting left motor to {}".format(int(motorChangeL)))
+        print("Setting right motor to {}".format(int(motorChangeR)))
 
     sleep(0.02)

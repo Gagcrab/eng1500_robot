@@ -76,42 +76,6 @@ def ultrasonic_read(ultraSens, numReadings):
     return readAvg
 
 
-# Globals for proximity_read()
-proxRunOnce = 0
-proxReadArray = []
-proxReadIndex = 0
-proxReadTotal = 0
-
-def proximity_read(apds9960, numReadings):
-    """
-    Averages the result of past numReadings.
-    :param apds9960: APDS9960 object from APDS9960LITE.py
-    :param numReadings: Number of readings to take and average
-    :return: Averaged APDS9960 proximity sensor reading.
-    """
-
-    global proxRunOnce
-    global proxReadArray
-    global proxReadIndex
-    global proxReadTotal
-
-    if proxRunOnce == 0:
-        proxReadArray = [0]*numReadings
-        proxRunOnce = 1
-
-    proxReadTotal -= proxReadArray[proxReadIndex]
-    proxReadArray[proxReadIndex] = apds9960.prox.proximityLevel
-    proxReadTotal += proxReadArray[proxReadIndex]
-    proxReadIndex += 1
-
-    if proxReadIndex >= numReadings:
-        proxReadIndex = 0
-
-    readAvg = proxReadTotal / numReadings
-
-    return readAvg
-
-
 def motor_calibration(motor_left, motor_right, enc):
     """
     This function generates lines of CSV in the REPL output representing the:
