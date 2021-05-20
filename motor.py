@@ -57,8 +57,10 @@ class Motor(object):
         self.ch = self.tim.channel(_channel, Timer.PWM, pin=self.EN)
         print("Motor", self.side, "initialised!")
 
+
     def duty(self, pwm):
         self.ch.pulse_width_percent(pwm)
+
 
     def set_forwards(self):
         if self.side == "left":
@@ -68,6 +70,7 @@ class Motor(object):
             self.IN1.off()
             self.IN2.on()
 
+
     def set_backwards(self):
         if self.side == "left":
             self.IN1.off()
@@ -75,6 +78,7 @@ class Motor(object):
         else:
             self.IN1.on()
             self.IN2.off()
+
 
     def ctrl_alloc(self, pwmvec):
         """

@@ -5,16 +5,17 @@ from motor import Motor
 from encoder import Encoder
 from APDS9960LITE import APDS9960LITE
 from util import motor_calibration, apds9960_distance_calibration, \
-                 line_distance_mm, ultrasonic_read
+                 line_distance_mm, ultrasonic_read, straight_compensate
 import sys, ultrasonic, ssd1306
 
 # Enable/disable different robot functionality.
-enableUltrasonic       = 1; enableProximity        = 1
-enableLineSensors      = 1; enableSideIRSensors    = 1
-enableServo            = 1; enableDisplay          = 1
-enableMovement         = 0
+enableUltrasonic  = 0; enableProximity     = 1
+enableLineSensors = 1; enableSideIRSensors = 1
+enableServo       = 1; enableDisplay       = 1
+enableMovement    = 1; enableEncoder       = 1
+
 # Only use these for generating calibration data
-enableRGBCalibration   = 0; enableMotorCalibration = 0
+enableRGBCalibration = 0; enableMotorCalibration = 0
 
 """
 =======================================================================
@@ -33,20 +34,21 @@ SIDE_SENS_L = "D11";        OLED_SCL = "PB1"
 SIDE_SENS_R = "D10";        OLED_SDA = "PB2"
 
 # Motor speeds and limit (PWM percentages)
-fwdSpeed = 70 ;              bckSpeed = -65
+fwdSpeed = 67;              bckSpeed = -67
 motorLimit = 90
 
-# Sensitivity modifier constants. Higher values increase correction aggressiveness.
-lineSensMod = 1.0  # 1.0 = no effect
+# Sensitivity modifier constant. Lower values increases correction aggressiveness.
+lineSensMod = 0.35  # 1.0 = no effect
+compMod = 0.25
 
 # Distance thresholds for the state machine
 proxCloseThres = 2.0  # about 120 mm
 proxStopThres  = 5.0  # about 60 mm
-ultraStopThres = 150  # 100 mm
-garageThres = 100     # 100 mm
+ultraStopThres = 100  # 100 mm
+garageThres = 150     # 150 mm
 
-# Default state
-state = "STOP_CHECK"
+# Default state - should be STOP_CHECK
+state = "GARAGE_START"
 
 """
 =======================================================================
@@ -58,6 +60,9 @@ if enableDisplay:
     oled_i2c = I2C(-1, scl=Pin(OLED_SCL), sda=Pin(OLED_SDA))
     oled = ssd1306.SSD1306_I2C(128, 32, oled_i2c)
     print("OLED display initialised.")
+
+if enableMotorCalibration:  # Motor calib requires encoder
+    enableEncoder = 1
 
 if enableRGBCalibration:  # RGB calibration requires prox and Ultrasonic
     enableProximity  = 1
@@ -97,15 +102,17 @@ if enableServo:
 # Create left/right Motor, Encoder objects
 motor_left = Motor("left", MOTOR_L_IN1, MOTOR_L_IN2, MOTOR_L_EN_PWM)
 motor_right = Motor("right", MOTOR_R_IN1, MOTOR_R_IN2, MOTOR_R_EN_PWM)
-enc = Encoder(ENC_L, ENC_R)
-print("Encoder initialised.")
+
+if enableEncoder:
+    enc = Encoder(ENC_L, ENC_R)
+    print("Encoder initialised.")
 
 if enableMovement == 0:
     fwdSpeed = 0
     bckSpeed = 0
 
 print("Initialisation complete!")
-sleep(0.2)  # Wait to ensure everything is initialized
+sleep(0.2)  # Wait to ensure everything is initialised
 
 if enableMotorCalibration:
     motor_left.ctrl_alloc(0)
@@ -129,12 +136,12 @@ ultra_dist = 0
 prox_dist = 0
 runOnce = 0
 checkTimer = 0
+enc_L_Last = 0
+enc_R_Last = 0
+encNotMoving = 0
 
 while True:
-    motor_left.ctrl_alloc(0)    # Set left motor to run forwards, speed 0
-    motor_right.ctrl_alloc(0)   # Set right motor to run forwards, speed 0
-    enc.clear_count()           # Reset the encoder to zero
-    oled.fill(0)                # Clear OLED screen
+    oled.fill(0)  # Clear OLED screen
 
     if enableLineSensors:
         line_dist = line_distance_mm(lnSens_A1, lnSens_A2, lnSens_A3, lnSens_A4)
@@ -193,6 +200,7 @@ while True:
 
     motorChangeL = 0
     motorChangeR = 0
+
     """
     ===================================================================
     ----------------------------- States ------------------------------
@@ -204,8 +212,6 @@ while True:
     if state == "STOP_CHECK":
         # By initialising default values, we can allow this state to function
         # with any of these sensors disabled!
-        motorChangeL = 0
-        motorChangeR = 0
         pTooClose = 0
         iLeftTooClose = 0
         iRightTooClose = 0
@@ -215,6 +221,9 @@ while True:
         tooCloseLeft = 0
         tooCloseRight = 0
         checkTimer += 1  # Allows us to use servo once every x iterations
+
+        enc.clear_count()
+        encNotMoving = 0  # Reset count of iterations where wheels are stuck
 
         if enableProximity:
             if prox_dist > proxStopThres:
@@ -287,11 +296,13 @@ while True:
         else:
             if uLeftTooClose:
                 tooCloseLeft = 1
-            elif iRightTooClose:
+            elif uRightTooClose:
                 tooCloseRight = 1
 
         if direction == 1:
-            if tooCloseLeft:
+            if uLeftTooClose and uRightTooClose and prox_dist > proxCloseThres:
+                state = "GARAGE_FINISH"
+            elif tooCloseLeft:
                 state = "FWD_CLOSE_L"
             elif tooCloseRight:
                 state = "FWD_CLOSE_R"
@@ -308,19 +319,20 @@ while True:
         ### END TRANSITION CONDITIONS ###
 
 
-
     # Everything good, drive forward
     elif state == "FWD_CLEAR":
-        motorChangeL = fwdSpeed
-        motorChangeR = fwdSpeed
+        motorChangeL = fwdSpeed + straight_compensate("left", enc, compMod)
+        motorChangeR = fwdSpeed + straight_compensate("right", enc, compMod)
 
 
         # Transition conditions
         if enableProximity and prox_dist > proxStopThres or \
            enableUltrasonic and ultra_dist < ultraStopThres or \
            enableSideIRSensors and side_l_dist == 0 or \
-           enableSideIRSensors and side_r_dist == 0:
-                state = "STOP_CHECK"
+           enableSideIRSensors and side_r_dist == 0 or \
+           encNotMoving == 3:
+            straight_compensate("reset", enc)  # reset compensation counters
+            state = "STOP_CHECK"
         else: state = state
         ### END TRANSITION CONDITIONS ###
 
@@ -331,51 +343,213 @@ while True:
             else:              # Veering right of the line, slow left motor
                 motorChangeL -= abs(line_dist)/lineSensMod
 
+        # If our wheels aren't turning, increase encNotMoving by 1 per loop
+        if enc.get_left() == enc_L_Last or enc.get_right() == enc_R_Last:
+            enc_L_Last = enc.get_left(); enc_R_Last = enc.get_right()
+            encNotMoving += 1
+
 
 
     # We have a wall on our left, move forward to evade
     elif state == "FWD_CLOSE_L":
         motorChangeL = fwdSpeed
-        motorChangeR = fwdSpeed - 20
+        motorChangeR = fwdSpeed - 10
 
         # Transition conditions
         if enableProximity and prox_dist > proxStopThres or \
            enableUltrasonic and ultra_dist < ultraStopThres or \
-           enableSideIRSensors and side_l_dist == 1:
-                state = "STOP_CHECK"
+           enableSideIRSensors and side_l_dist == 1 or \
+           enableSideIRSensors and side_r_dist == 0 or \
+           encNotMoving == 3:
+            state = "STOP_CHECK"
         else: state = state
         ### END TRANSITION CONDITIONS ##
+
+
+        if enableLineSensors:
+            if line_dist > 0:  # Veering left of the line, slow right motor
+                motorChangeR -= abs(line_dist)/lineSensMod
+            else:              # Veering right of the line, slow left motor
+                motorChangeL -= abs(line_dist)/lineSensMod
+
+        # If our wheels aren't turning, increase encNotMoving by 1 per loop
+        if enc.get_left() == enc_L_Last or enc.get_right() == enc_R_Last:
+            enc_L_Last = enc.get_left(); enc_R_Last = enc.get_right()
+            encNotMoving += 1
 
 
 
     # We have a wall on our right, move forward to evade
     elif state == "FWD_CLOSE_R":
-        motorChangeL = fwdSpeed - 20
+        motorChangeL = fwdSpeed - 10
         motorChangeR = fwdSpeed
 
         # Transition conditions
         if enableProximity and prox_dist > proxStopThres or \
            enableUltrasonic and ultra_dist < ultraStopThres or \
-           enableSideIRSensors and side_l_dist == 1:
-                state = "STOP_CHECK"
+           enableSideIRSensors and side_r_dist == 1 or \
+           enableSideIRSensors and side_l_dist == 0 or \
+           encNotMoving == 3:
+            state = "STOP_CHECK"
         else: state = state
         ### END TRANSITION CONDITIONS ##
 
 
+        if enableLineSensors:
+            if line_dist > 0:  # Veering left of the line, slow right motor
+                motorChangeR -= abs(line_dist)/lineSensMod
+            else:              # Veering right of the line, slow left motor
+                motorChangeL -= abs(line_dist)/lineSensMod
+
+        # If our wheels aren't turning, increase encNotMoving by 1 per loop
+        if enc.get_left() == enc_L_Last or enc.get_right() == enc_R_Last:
+            enc_L_Last = enc.get_left(); enc_R_Last = enc.get_right()
+            encNotMoving += 1
+
 
     # Something in front, back up
     elif state == "REV_CLEAR":
-        motorChangeL = bckSpeed
+        motorChangeL = bckSpeed - straight_compensate("left", enc, compMod)
+        motorChangeR = bckSpeed - straight_compensate("right", enc, compMod)
+
+        # Transition conditions
+        if enableProximity and prox_dist < proxStopThres or \
+           enableUltrasonic and ultra_dist > ultraStopThres or \
+           enableSideIRSensors and side_l_dist == 0 or \
+           enableSideIRSensors and side_r_dist == 0 or \
+           encNotMoving == 3:
+            straight_compensate("reset", enc)  # reset compensation counters
+            state = "STOP_CHECK"
+        else: state = state
+        ### END TRANSITION CONDITIONS ###
+
+
+        if enableLineSensors:
+            if line_dist > 0:  # Veering left of the line, slow left motor
+                motorChangeL += abs(line_dist)/lineSensMod
+            else:              # Veering right of the line, slow right motor
+                motorChangeR += abs(line_dist)/lineSensMod
+
+        # If our wheels aren't turning, increase encNotMoving by 1 per loop
+        if enc.get_left() == enc_L_Last or enc.get_right() == enc_R_Last:
+            enc_L_Last = enc.get_left(); enc_R_Last = enc.get_right()
+            encNotMoving += 1
+
+    # We have a wall on our left, reverse to evade
+    elif state == "REV_CLOSE_L":
+        motorChangeL = bckSpeed + 20
         motorChangeR = bckSpeed
+
+        # Transition conditions
+        if enableProximity and prox_dist < proxStopThres or \
+           enableUltrasonic and ultra_dist > ultraStopThres or \
+           enableSideIRSensors and side_l_dist == 1 or \
+           enableSideIRSensors and side_r_dist == 0 or \
+           encNotMoving == 3:
+            state = "STOP_CHECK"
+        else: state = state
+        ### END TRANSITION CONDITIONS ###
+
+
+        if enableLineSensors:
+            if line_dist > 0:  # Veering left of the line, slow left motor
+                motorChangeL += abs(line_dist)/lineSensMod
+            else:              # Veering right of the line, slow right motor
+                motorChangeR += abs(line_dist)/lineSensMod
+
+        # If our wheels aren't turning, increase encNotMoving by 1 per loop
+        if enc.get_left() == enc_L_Last or enc.get_right() == enc_R_Last:
+            enc_L_Last = enc.get_left(); enc_R_Last = enc.get_right()
+            encNotMoving += 1
+
+
+    # We have a wall on our right, reverse to evade
+    elif state == "REV_CLOSE_R":
+        motorChangeL = bckSpeed
+        motorChangeR = bckSpeed + 20
+
+        # Transition conditions
+        if enableProximity and prox_dist < proxStopThres or \
+           enableUltrasonic and ultra_dist > ultraStopThres or \
+           enableSideIRSensors and side_r_dist == 0 or \
+           enableSideIRSensors and side_l_dist == 1 or \
+           encNotMoving == 3:
+            state = "STOP_CHECK"
+        else: state = state
+        ### END TRANSITION CONDITIONS ###
+
+
+        if enableLineSensors:
+            if line_dist > 0:  # Veering left of the line, slow left motor
+                motorChangeL += abs(line_dist)/lineSensMod
+            else:              # Veering right of the line, slow right motor
+                motorChangeR += abs(line_dist)/lineSensMod
+
+        # If our wheels aren't turning, increase encNotMoving by 1 per loop
+        if enc.get_left() == enc_L_Last or enc.get_right() == enc_R_Last:
+            enc_L_Last = enc.get_left(); enc_R_Last = enc.get_right()
+            encNotMoving += 1
+
+
+    elif state == "FOUND_LINE":
+        motorChangeL = 0
+        motorChangeR = fwdSpeed - 2
+
+        # Transition conditions
+        if enableProximity and prox_dist > proxStopThres or \
+           enableUltrasonic and ultra_dist < ultraStopThres:
+            state = "STOP_CHECK"
+        if lnSens_A2.read() + lnSens_A3.read() >= \
+           (lnSens_A1.read() + lnSens_A4.read() + 500):
+            state = "FOLLOW_LINE"
+        ### END TRANSITION CONDITIONS
+
+    elif state == "FOLLOW_LINE":
+        motorChangeL = fwdSpeed
+        motorChangeR = fwdSpeed
+
+        # Transition conditions
+        if enableProximity and prox_dist < proxStopThres or \
+           enableUltrasonic and ultra_dist > ultraStopThres or \
+           enableSideIRSensors and side_r_dist == 0 or \
+           enableSideIRSensors and side_l_dist == 0 or \
+           encNotMoving == 3:
+            state = "STOP_CHECK"
+        if lnSens_A2.read() + lnSens_A3.read() + \
+           lnSens_A1.read() + lnSens_A4.read() < 4000:
+            state = "FWD_CLEAR"
+        else: state = state
+        ### END TRANSITION CONDITIONS ###
+
+
+        if enableLineSensors:
+            if line_dist > 0:  # Veering left of the line, slow left motor
+                motorChangeL += abs(line_dist)/lineSensMod
+            else:              # Veering right of the line, slow right motor
+                motorChangeR += abs(line_dist)/lineSensMod
+
+        # If our wheels aren't turning, increase encNotMoving by 1 per loop
+        if enc.get_left() == enc_L_Last or enc.get_right() == enc_R_Last:
+            enc_L_Last = enc.get_left(); enc_R_Last = enc.get_right()
+            encNotMoving += 1
+
+
+
+    # We begin in this state
+    elif state == "GARAGE_START":
+        motorChangeL = fwdSpeed + straight_compensate("left", enc, compMod)
+        motorChangeR = fwdSpeed + straight_compensate("right", enc, compMod)
 
 
         # Transition conditions
-        if enableProximity and prox_dist < proxCloseThres or \
-           enableUltrasonic and ultra_dist > ultraStopThres or \
-           enableSideIRSensors and side_l_dist == 0 or \
-           enableSideIRSensors and side_r_dist == 0:
-                sleep(0.3)
-                state = "STOP_CHECK"
+        if enableProximity and prox_dist > proxStopThres or \
+           enableUltrasonic and ultra_dist < ultraStopThres:
+            straight_compensate("reset", enc)  # reset compensation counters
+            state = "STOP_CHECK"
+        if lnSens_A1.read() >= 2500 or lnSens_A2.read() >= 2500 or\
+           lnSens_A3.read() >= 2500 or lnSens_A4.read() >= 2500:
+            straight_compensate("reset", enc)  # reset compensation counters
+            state = "FOUND_LINE"
         else: state = state
         ### END TRANSITION CONDITIONS ###
 
@@ -387,41 +561,16 @@ while True:
                 motorChangeR -= abs(line_dist)/lineSensMod
 
 
-    # We have a wall on our left, reverse to evade
-    elif state == "REV_CLOSE_L":
-        motorChangeL = fwdSpeed - 20
-        motorChangeR = fwdSpeed
 
-        # Transition conditions
-        if enableProximity and prox_dist < proxCloseThres or \
-           enableUltrasonic and ultra_dist > ultraStopThres or \
-           enableSideIRSensors and side_r_dist == 0:
-                sleep(0.3)
-                state = "STOP_CHECK"
-        else: state = state
-        ### END TRANSITION CONDITIONS ###
-
-
-    # We have a wall on our right, reverse to evade
-    elif state == "REV_CLOSE_R":
-        motorChangeL = fwdSpeed
-        motorChangeR = fwdSpeed - 20
-
-        # Transition conditions
-        if enableProximity and prox_dist < proxCloseThres or \
-           enableUltrasonic and ultra_dist > ultraStopThres or \
-           enableSideIRSensors and side_l_dist == 0:
-                sleep(0.3)
-                state = "STOP_CHECK"
-        else: state = state
-        ### END TRANSITION CONDITIONS ###
-
-
-    elif state == "GARAGE_START":
-        print("blah blah")
-
+    # We've found the garage again!
     elif state == "GARAGE_FINISH":
-        print("finishblah blah")
+        motorChangeL = 0
+        motorChangeR = 0
+
+    # Transition conditions
+    # - none here, because this is the end of track.
+    ### END TRANSITION CONDITIONS ###
+
 
     else:
         print("State machine has fucked up, blame Isaac")
@@ -434,18 +583,18 @@ while True:
     if enableLineSensors:
         print(lineStr)
     if enableSideIRSensors:
-        print("Left side sensor " + sideSens_L_Str)
-        print("Right side sensor " + sideSens_R_Str)
+        print("Left infrared sensor " + sideSens_L_Str)
+        print("Right infrared sensor " + sideSens_R_Str)
     if enableProximity:
         print(proxStr)
     if enableUltrasonic:
-        print(ultraStr)
+        print("Ultrasonic forward " + ultraStr)
         if enableServo:
-            print("UL Left" + ultra_L_Str)
-            print("UL Right" + ultra_R_Str)
+            print("Ultrasonic left" + ultra_L_Str)
+            print("Ultrasonic right" + ultra_R_Str)
     print(stateStr)
 
-    # TODO: utility function to stop clutter with sensors not present
+    # TODO: utility function to stop clutter when sensors not present
     if enableDisplay:
         oled.text(lineStr, 0, 1); oled.text(sideSens_L_Str, 80, 1)
         oled.text(proxStr, 0, 9); oled.text(sideSens_R_Str, 80, 9)
@@ -453,6 +602,7 @@ while True:
         oled.text(ultra_L_Str, 51, 17)
         oled.text(ultra_R_Str, 81, 17)
         oled.text(str(state), 0, 25)
+        #oled.text(str(lnSens_A1.read()), 0, 25)
         oled.show()
 
     if runOnce < 10:    # Don't do anything for first 10 iterations, to

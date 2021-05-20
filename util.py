@@ -17,10 +17,10 @@ def line_distance_mm(adc1, adc2, adc3, adc4):
     :return: Distance in mm of object in front of ultrasonic sensor
     """
     # These values contain the offset of the line sensors relative to the centre of the vehicle.
-    x1 = -21
-    x2 = -7
+    x1 = -22
+    x2 = -8
     x3 = 7
-    x4 = 21
+    x4 = 20
 
     # Read our sensor data
     w1 = adc1.read()
@@ -33,7 +33,6 @@ def line_distance_mm(adc1, adc2, adc3, adc4):
 
     # line_dist contains the offset of the line relative to the centre of the vehicle
     dist_mm = num/denom
-    #dist_mm = (w1*x1)/denom + (w2*x2)/denom + (w3*x3)/denom + (w4*x4)/denom
 
     return dist_mm
 
@@ -75,6 +74,28 @@ def ultrasonic_read(ultraSens, numReadings):
 
     return readAvg
 
+left_timer = 0
+right_timer = 0
+
+def straight_compensate(side, enc, mod=0.1):
+    global left_timer
+    global right_timer
+    left_clicks = enc.get_left()
+    right_clicks = enc.get_right()
+    if side == "left":
+        if left_clicks > right_clicks:
+            left_timer += 1
+        else: left_timer = 0
+        return left_timer * mod
+    elif side == "right":
+        if right_clicks > left_clicks:
+            right_timer += 1
+        else: right_timer = 0
+        return right_timer * mod
+    else:
+        left_timer = 0
+        right_timer = 0
+
 
 def motor_calibration(motor_left, motor_right, enc):
     """
@@ -92,17 +113,19 @@ def motor_calibration(motor_left, motor_right, enc):
     for testPWM in range(0, 101, 5):  # Loop from 0-100% increasing by 5%
         enc.clear_count()
         # Drive forwards for 1 second at specified pwm
-        motor_left.ctrl_alloc(1, testPWM)
-        motor_right.ctrl_alloc(1, testPWM)
+        motor_left.ctrl_alloc(testPWM)
+        motor_right.ctrl_alloc(testPWM)
         sleep(1)
 
         # Wait for 1 second, print encoder counts in CSV format
-        motor_left.ctrl_alloc(1, 0)
-        motor_right.ctrl_alloc(1, 0)
+        motor_left.ctrl_alloc(0)
+        motor_right.ctrl_alloc(0)
         left_count = enc.get_left()
         right_count = enc.get_right()
         print("{:3d}, {:4d}, {:4d}".format(testPWM, left_count, right_count))
         sleep(1)
+    motor_left.ctrl_alloc(0)
+    motor_right.ctrl_alloc(0)
     print("Measurements generated! Paste the above inside motor_csv.txt")
 
 
