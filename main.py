@@ -49,7 +49,7 @@ lineLostIters = 25    # After this many iterations without the line, change stat
 ultraCheckIters = 25  # Check ultra once every x iterations
 
 # Sensitivity modifier constant. Lower values increases correction aggressiveness.
-lineAdjMod = 3.5  # 1.0 = no effect
+lineAdjMod = 2.5  # 1.0 = no effect
 compMod = 1.0
 
 lineFollowSens = 400   # Increase for stricter transitioning to FWD_CLEAR
@@ -306,12 +306,13 @@ while True:
 
     # Everything good, drive forward
     elif state == "FWD_CLEAR":
-        motorChangeL = fwdSpeed + 2 - (rightTurnPWM / 2)
-        motorChangeR = fwdSpeed + 2 - (leftTurnPWM / 2)
+        motorChangeL = fwdSpeed - (rightTurnPWM / 2)
+        motorChangeR = fwdSpeed - (leftTurnPWM / 2)
 
 
         # Transition conditions
         if enableEncoder and encNotMoving == encNotMovingMaxIters:
+            encNotMoving = 0
             state = "REV_CLEAR"
         elif enableProximity and prox_dist > proxStopThres or \
            enableUltrasonic and ultra_dist < ultraStopThres or \
@@ -348,11 +349,13 @@ while True:
 
 
         # Transition conditions
-        if enableProximity and prox_dist > proxStopThres or \
+        if enableEncoder and encNotMoving == encNotMovingMaxIters:
+            encNotMoving = 0
+            state = "REV_CLEAR"
+        elif enableProximity and prox_dist > proxStopThres or \
            enableUltrasonic and ultra_dist < ultraStopThres or \
            enableSideIRSensors and side_l_dist == 1 or \
-           enableSideIRSensors and side_r_dist == 0 or \
-           enableEncoder and encNotMoving >= encNotMovingMaxIters:
+           enableSideIRSensors and side_r_dist == 0:
             if enableEncoder: encNotMoving = 0
             state = "STOP_CHECK"
         else: state = state
@@ -370,16 +373,18 @@ while True:
 
     # We have a wall on our right, move forward to evade
     elif state == "FWD_CLOSE_R":
-        motorChangeL = (fwdSpeed - rightTurnPWM) - 5
-        motorChangeR = fwdSpeed - 5
+        motorChangeL = (fwdSpeed - rightTurnPWM) - 7
+        motorChangeR = fwdSpeed - 7
 
 
         # Transition conditions
-        if enableProximity and prox_dist > proxStopThres or \
+        if enableEncoder and encNotMoving == encNotMovingMaxIters:
+            encNotMoving = 0
+            state = "REV_CLEAR"
+        elif enableProximity and prox_dist > proxStopThres or \
            enableUltrasonic and ultra_dist < ultraStopThres or \
            enableSideIRSensors and side_r_dist == 1 or \
-           enableSideIRSensors and side_l_dist == 0 or \
-           enableEncoder and encNotMoving >= encNotMovingMaxIters:
+           enableSideIRSensors and side_l_dist == 0:
             if enableEncoder: encNotMoving = 0
             state = "STOP_CHECK"
         else: state = state
