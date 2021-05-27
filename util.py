@@ -77,17 +77,17 @@ def ultrasonic_read(ultraSens, numReadings):
 left_timer = 0
 right_timer = 0
 
-def straight_compensate(side, enc, mod=0.1):
+def straight_compensate(side, enc, mod=1.0):
     global left_timer
     global right_timer
     left_clicks = enc.get_left()
     right_clicks = enc.get_right()
-    if side == "left":
+    if side == "right":
         if left_clicks > right_clicks:
             left_timer += 1
         else: left_timer = 0
         return left_timer * mod
-    elif side == "right":
+    elif side == "left":
         if right_clicks > left_clicks:
             right_timer += 1
         else: right_timer = 0
